@@ -39,27 +39,15 @@ pub type GuiSectionCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 pub type GuiUiCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 pub type GuiWindowCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 
-pub type FnRegisterOnGameInitialized =
-    unsafe extern "C" fn(Option<GameInitializedCallback>, *mut c_void) -> bool;
-pub type FnRegisterPresentCallback =
-    unsafe extern "C" fn(Option<PresentCallback>, *mut c_void) -> bool;
+pub type FnRegisterOnGameInitialized = unsafe extern "C" fn(Option<GameInitializedCallback>, *mut c_void) -> bool;
+pub type FnRegisterPresentCallback = unsafe extern "C" fn(Option<PresentCallback>, *mut c_void) -> bool;
 
-pub type FnGuiRegisterMenu = unsafe extern "C" fn(
-    *const c_char,
-    Option<GuiMenuCallback>,
-    *mut c_void,
-) -> bool;
-pub type FnGuiRegisterSection =
-    unsafe extern "C" fn(Option<GuiSectionCallback>, *mut c_void) -> bool;
+pub type FnGuiRegisterMenu = unsafe extern "C" fn(*const c_char, Option<GuiMenuCallback>, *mut c_void) -> bool;
+pub type FnGuiRegisterSection = unsafe extern "C" fn(Option<GuiSectionCallback>, *mut c_void) -> bool;
 pub type FnGuiNotify = unsafe extern "C" fn(*const c_char) -> bool;
 pub type FnGuiNewWindowId = unsafe extern "C" fn() -> i32;
-pub type FnGuiShowWindow = unsafe extern "C" fn(
-    i32,
-    *const c_char,
-    Option<GuiWindowCallback>,
-    Option<GuiWindowCallback>,
-    *mut c_void,
-) -> bool;
+pub type FnGuiShowWindow =
+    unsafe extern "C" fn(i32, *const c_char, Option<GuiWindowCallback>, Option<GuiWindowCallback>, *mut c_void) -> bool;
 pub type FnGuiCloseWindow = unsafe extern "C" fn(i32);
 pub type FnGuiIsWindowOpen = unsafe extern "C" fn(i32) -> bool;
 
@@ -68,15 +56,8 @@ pub type FnUiVoid = unsafe extern "C" fn(*mut c_void) -> bool;
 pub type FnUiButton = unsafe extern "C" fn(*mut c_void, *const c_char) -> bool;
 pub type FnUiCheckbox = unsafe extern "C" fn(*mut c_void, *const c_char, *mut bool) -> bool;
 pub type FnUiColoredLabel = unsafe extern "C" fn(*mut c_void, u8, u8, u8, u8, *const c_char) -> bool;
-pub type FnUiGrid = unsafe extern "C" fn(
-    *mut c_void,
-    *const c_char,
-    usize,
-    f32,
-    f32,
-    Option<GuiUiCallback>,
-    *mut c_void,
-) -> bool;
+pub type FnUiGrid =
+    unsafe extern "C" fn(*mut c_void, *const c_char, usize, f32, f32, Option<GuiUiCallback>, *mut c_void) -> bool;
 
 pub type FnGetBaseDir = unsafe extern "C" fn() -> *const c_char;
 
@@ -147,12 +128,17 @@ pub fn raw_log(get: GetApiFn, level: i32, msg: &str) {
     if ptr.is_null() {
         return;
     }
+    // SAFETY: `ptr` was null-checked above. Every symbol the host publishes is a C function that
+    // matches the signature declared for it, and a function pointer is pointer-sized — the same as
+    // the `*mut c_void` it is read from.
     let f: FnLog = unsafe { std::mem::transmute_copy::<*mut c_void, FnLog>(&ptr) };
     let tag = b"honse_pov\0";
     let sanitized = msg.replace('\0', " ");
     let Ok(body) = std::ffi::CString::new(sanitized) else {
         return;
     };
+    // SAFETY: `f` is the host's resolved `log` entry point, `tag` is a NUL-terminated literal, and
+    // `body` is a live `CString` — all three are valid for the duration of the call.
     unsafe { f(level, tag.as_ptr() as *const c_char, body.as_ptr()) };
 }
 
@@ -169,12 +155,7 @@ fn symbol(get: GetApiFn, name: &str) -> *mut c_void {
     get(buf.as_ptr() as *const c_char)
 }
 
-fn resolve_fn<T: Copy>(
-    get: GetApiFn,
-    name: &str,
-    missing: &mut Vec<&'static str>,
-    required: bool,
-) -> Option<T> {
+fn resolve_fn<T: Copy>(get: GetApiFn, name: &str, missing: &mut Vec<&'static str>, required: bool) -> Option<T> {
     let ptr = symbol(get, name);
     if ptr.is_null() {
         if required {
@@ -182,7 +163,8 @@ fn resolve_fn<T: Copy>(
         }
         return None;
     }
-    // All of these are plain function pointers on x86_64/aarch64.
+    // SAFETY: all symbols resolved here are plain C function pointers on x86_64/aarch64, `ptr` is
+    // non-null (checked above), and `T` is only ever instantiated with those pointer types.
     Some(unsafe { std::mem::transmute_copy::<*mut c_void, T>(&ptr) })
 }
 
@@ -220,10 +202,7 @@ pub fn resolve(get: GetApiFn) -> Result<Api, Vec<&'static str>> {
                     raw_log(
                         get,
                         crate::logging::WARN,
-                        &format!(
-                            "honse_pov: host has no {}; that feature degrades",
-                            $name
-                        ),
+                        &format!("honse_pov: host has no {}; that feature degrades", $name),
                     );
                     $stub
                 }
@@ -245,23 +224,14 @@ pub fn resolve(get: GetApiFn) -> Result<Api, Vec<&'static str>> {
         il2cpp_get_field_from_name: req!("il2cpp_get_field_from_name", FnGetField),
         il2cpp_get_field_value: req!("il2cpp_get_field_value", FnGetFieldValue),
         il2cpp_set_field_value: req!("il2cpp_set_field_value", FnSetFieldValue),
-        il2cpp_get_singleton_like_instance: req!(
-            "il2cpp_get_singleton_like_instance",
-            FnSingleton
-        ),
+        il2cpp_get_singleton_like_instance: req!("il2cpp_get_singleton_like_instance", FnSingleton),
         il2cpp_string_chars: req!("il2cpp_string_chars", FnStringChars),
         il2cpp_string_length: req!("il2cpp_string_length", FnStringLength),
         il2cpp_get_main_thread: req!("il2cpp_get_main_thread", FnGetMainThread),
         il2cpp_schedule_on_thread: req!("il2cpp_schedule_on_thread", FnScheduleOnThread),
 
-        hachimi_register_on_game_initialized: req!(
-            "hachimi_register_on_game_initialized",
-            FnRegisterOnGameInitialized
-        ),
-        hachimi_register_present_callback: req!(
-            "hachimi_register_present_callback",
-            FnRegisterPresentCallback
-        ),
+        hachimi_register_on_game_initialized: req!("hachimi_register_on_game_initialized", FnRegisterOnGameInitialized),
+        hachimi_register_present_callback: req!("hachimi_register_present_callback", FnRegisterPresentCallback),
 
         gui_register_menu_item: req!("gui_register_menu_item", FnGuiRegisterMenu),
         gui_register_menu_section: req!("gui_register_menu_section", FnGuiRegisterSection),

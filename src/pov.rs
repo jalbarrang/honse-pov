@@ -270,10 +270,13 @@ fn reload_tuning() {
         return;
     };
 
+    // SAFETY: host API call. The returned pointer is null-checked immediately below.
     let base = unsafe { (api.hachimi_get_base_dir)() };
     if base.is_null() {
         return;
     }
+    // SAFETY: `base` was checked non-null and points at a host-owned NUL-terminated string that
+    // lives for the process lifetime.
     let base = unsafe { std::ffi::CStr::from_ptr(base) };
     let path = std::path::Path::new(&*base.to_string_lossy()).join(CONFIG_FILE);
 
@@ -387,9 +390,7 @@ const HEAD_PARTS: [&str; 2] = ["M_Hair", "M_Face"];
 /// Everything that makes up the runner's own visible model. Hiding all of it is
 /// what gives a "no self model" first person view; the head list alone leaves the
 /// torso and shoulders in frame.
-const BODY_PARTS: [&str; 7] = [
-    "M_Body", "M_Cheek", "M_Face", "M_Hair", "M_Mayu", "Eyes", "M_Tail",
-];
+const BODY_PARTS: [&str; 7] = ["M_Body", "M_Cheek", "M_Face", "M_Hair", "M_Mayu", "Eyes", "M_Tail"];
 
 const LOG_INTERVAL_MS: u64 = 1000;
 
@@ -507,7 +508,10 @@ pub fn status() -> String {
     match POSE.lock().ok().and_then(|g| *g) {
         Some(pose) => format!(
             "POV on - eye ({:.2}, {:.2}, {:.2}), fov {:.0}",
-            pose.pos.x, pose.pos.y, pose.pos.z, tuning().fov
+            pose.pos.x,
+            pose.pos.y,
+            pose.pos.z,
+            tuning().fov
         ),
         None => "POV on - waiting for a selected runner with a loaded model".to_owned(),
     }
@@ -528,10 +532,18 @@ fn reset_rotation_stabilizer() {
     }
 }
 
+/// `value > 0.0`, written without a negated comparison so the NaN case is explicit.
+///
+/// NaN fails the comparison, so callers reject it the same way they reject zero — a NaN step or
+/// FOV would otherwise poison every frame after it.
+fn is_positive(value: f32) -> bool {
+    value.partial_cmp(&0.0) == Some(std::cmp::Ordering::Greater)
+}
+
 /// Clamps the per-frame rotation change so the view follows the head smoothly
 /// instead of inheriting every animated bob.
 fn stabilize_rotation(target: Quat, max_step: f32) -> Quat {
-    if !(max_step > 0.0) {
+    if !is_positive(max_step) {
         return target;
     }
 
@@ -581,6 +593,8 @@ fn should_log(slot: &AtomicU64) -> bool {
 // ---------------------------------------------------------------- install ---
 
 pub fn install() {
+    // SAFETY: called by the host on the plugin init path, so the IL2CPP runtime is already up.
+    // Every lookup below returns null on failure and is checked before the pointer is used.
     unsafe {
         let core_image = il2cpp::assembly_image("UnityEngine.CoreModule.dll");
         let game_image = il2cpp::assembly_image("umamusume.dll");
@@ -594,8 +608,7 @@ pub fn install() {
         let model_controller = il2cpp::class(game_image, "Gallop", "RaceModelController");
         let base_model_controller = il2cpp::class(game_image, "Gallop", "ModelController");
         let event_camera = il2cpp::class(game_image, "Gallop", "EventCamera");
-        let course_camera_controller =
-            il2cpp::class(game_image, "Gallop", "CourseCameraController");
+        let course_camera_controller = il2cpp::class(game_image, "Gallop", "CourseCameraController");
 
         let camera_class = il2cpp::class(core_image, "UnityEngine", "Camera");
         let gameobject_class = il2cpp::class(core_image, "UnityEngine", "GameObject");
@@ -645,11 +658,7 @@ pub fn install() {
             camera_set_far_clip: icall("UnityEngine.Camera::set_farClipPlane(System.Single)"),
             camera_get_aspect: il2cpp::method_addr(camera_class, "get_aspect", 0),
             get_model_controller: il2cpp::method_addr(race_view_base, "GetModelController", 1),
-            get_prefab_attach_transform: il2cpp::method_addr(
-                model_controller,
-                "GetPrefabAttachTransform",
-                1,
-            ),
+            get_prefab_attach_transform: il2cpp::method_addr(model_controller, "GetPrefabAttachTransform", 1),
             transform_get_position: icall("UnityEngine.Transform::get_position_Injected(UnityEngine.Vector3&)"),
             transform_get_rotation: icall("UnityEngine.Transform::get_rotation_Injected(UnityEngine.Quaternion&)"),
             transform_set_position: icall("UnityEngine.Transform::set_position_Injected(UnityEngine.Vector3&)"),
@@ -678,7 +687,10 @@ pub fn install() {
             ("Camera::set_farClipPlane", classes.camera_set_far_clip),
             ("Camera.get_aspect", classes.camera_get_aspect),
             ("RaceViewBase.GetModelController", classes.get_model_controller),
-            ("RaceModelController.GetPrefabAttachTransform", classes.get_prefab_attach_transform),
+            (
+                "RaceModelController.GetPrefabAttachTransform",
+                classes.get_prefab_attach_transform,
+            ),
             ("Transform::get_position_Injected", classes.transform_get_position),
             ("Transform::get_rotation_Injected", classes.transform_get_rotation),
             ("Transform::set_position_Injected", classes.transform_set_position),
@@ -714,11 +726,7 @@ pub fn install() {
             return;
         }
 
-        let trampoline = (api.interceptor_hook)(
-            interceptor,
-            target as *mut c_void,
-            course_on_pre_cull as *mut c_void,
-        );
+        let trampoline = (api.interceptor_hook)(interceptor, target as *mut c_void, course_on_pre_cull as *mut c_void);
         if trampoline.is_null() {
             set_unavailable("interceptor_hook failed for CourseCameraController.OnPreCull".to_owned());
             return;
@@ -755,8 +763,7 @@ static FIND_RESERVE_TRAMPOLINE: AtomicUsize = AtomicUsize::new(0);
 /// forwarded rather than dropped: passing it on is correct whether or not the
 /// compiled method reads it, and reconstructing one would not be.
 type AddCutInFn = unsafe extern "C" fn(*mut c_void, *mut c_void, i32, i32, f32, *mut c_void);
-type AddCutInNamedFn =
-    unsafe extern "C" fn(*mut c_void, *mut c_void, i32, i32, *mut c_void, f32, *mut c_void);
+type AddCutInNamedFn = unsafe extern "C" fn(*mut c_void, *mut c_void, i32, i32, *mut c_void, f32, *mut c_void);
 type FindReserveFn = unsafe extern "C" fn(*mut c_void, i32, *mut c_void) -> bool;
 
 fn suppress_cutins() -> bool {
@@ -769,19 +776,13 @@ fn should_drop_cutin(category: i32, skill_id: i32) -> bool {
         return false;
     }
     if should_log(&LAST_CUTIN_LOG_MS) {
-        logging::info(&format!(
-            "POV: dropped cut-in (category {category}, skill {skill_id})"
-        ));
+        logging::info(&format!("POV: dropped cut-in (category {category}, skill {skill_id})"));
     }
     true
 }
 
 /// The gate the race actually consults. Returning false means "no cut-in queued".
-unsafe extern "C" fn find_reserve(
-    this: *mut c_void,
-    horse_index: i32,
-    method: *mut c_void,
-) -> bool {
+unsafe extern "C" fn find_reserve(this: *mut c_void, horse_index: i32, method: *mut c_void) -> bool {
     if suppress_cutins() {
         if should_log(&LAST_CUTIN_LOG_MS) {
             logging::info(&format!("POV: cut-in suppressed for horse {horse_index}"));
@@ -837,6 +838,9 @@ unsafe extern "C" fn add_cut_in_info_named(
 }
 
 fn install_cutin_hooks() {
+    // SAFETY: runs on the plugin init path with IL2CPP live. Lookups return null on failure and are
+    // checked; the detours are `extern "C"` functions matching the hooked signatures, and each one
+    // re-reads its trampoline and skips the original call until that trampoline is published.
     unsafe {
         let Some(api) = api::get() else {
             return;
@@ -894,8 +898,7 @@ fn install_cutin_hooks() {
             logging::warn("POV: FindReserve not found; unique skill cut-ins will still play");
             return;
         }
-        let trampoline =
-            (api.interceptor_hook)(interceptor, target as *mut c_void, find_reserve as *mut c_void);
+        let trampoline = (api.interceptor_hook)(interceptor, target as *mut c_void, find_reserve as *mut c_void);
         if trampoline.is_null() {
             logging::warn("POV: hook failed for FindReserve");
             return;
@@ -1064,11 +1067,7 @@ pub unsafe fn on_race_tick(view: *mut c_void) {
     // Forward is the attach point's local +Z; the vertical nudge is world space.
     let forward = rot.rotate_vec(Vec3::new(0.0, 0.0, tuning.forward));
     let pose = Pose {
-        pos: Vec3::new(
-            base.x + forward.x,
-            base.y + forward.y + tuning.up,
-            base.z + forward.z,
-        ),
+        pos: Vec3::new(base.x + forward.x, base.y + forward.y + tuning.up, base.z + forward.z),
         rot,
     };
 
@@ -1087,19 +1086,13 @@ pub unsafe fn on_race_tick(view: *mut c_void) {
 
 /// Reads the camera mount: either the midpoint of the two eye transforms, or a
 /// single named attach point (chest / neck / head).
-unsafe fn read_attach_pose(
-    classes: PovClasses,
-    model: il2cpp::Obj,
-    attach: AttachPoint,
-) -> Option<(Vec3, Quat)> {
+unsafe fn read_attach_pose(classes: PovClasses, model: il2cpp::Obj, attach: AttachPoint) -> Option<(Vec3, Quat)> {
     let get_position: GetVec3Fn = std::mem::transmute(classes.transform_get_position);
     let get_rotation: GetQuatFn = std::mem::transmute(classes.transform_get_rotation);
 
     if attach == AttachPoint::Eyes {
-        let left =
-            il2cpp::call_obj1_i32(classes.get_prefab_attach_transform, model, ATTACH_EYE_LEFT);
-        let right =
-            il2cpp::call_obj1_i32(classes.get_prefab_attach_transform, model, ATTACH_EYE_RIGHT);
+        let left = il2cpp::call_obj1_i32(classes.get_prefab_attach_transform, model, ATTACH_EYE_LEFT);
+        let right = il2cpp::call_obj1_i32(classes.get_prefab_attach_transform, model, ATTACH_EYE_RIGHT);
         if left.is_null() || right.is_null() {
             return None;
         }
@@ -1113,11 +1106,7 @@ unsafe fn read_attach_pose(
         get_rotation(left, &mut rot_left);
         get_rotation(right, &mut rot_right);
 
-        if !pos_left.is_finite()
-            || !pos_right.is_finite()
-            || !rot_left.is_finite()
-            || !rot_right.is_finite()
-        {
+        if !pos_left.is_finite() || !pos_right.is_finite() || !rot_left.is_finite() || !rot_right.is_finite() {
             return None;
         }
 
@@ -1173,6 +1162,9 @@ fn apply_pov(this: *mut c_void) {
         return;
     };
 
+    // SAFETY: `this` is the live CourseCameraController the host passed to the hooked callback and
+    // `classes` was resolved at install time; every object IL2CPP hands back is null-checked below
+    // before it is dereferenced.
     unsafe {
         // The manager comes from the component we are running on, so we never
         // depend on singleton resolution.
@@ -1251,7 +1243,7 @@ fn apply_pov(this: *mut c_void) {
 /// `Camera.fieldOfView` is vertical. At 16:9, 90 horizontal is ~59 vertical —
 /// which is why a literal `fieldOfView = 90` looks like a fisheye.
 fn horizontal_to_vertical(horizontal_degrees: f32, aspect: f32) -> f32 {
-    if !(horizontal_degrees > 0.0) || !(aspect > 0.0) || !aspect.is_finite() {
+    if !is_positive(horizontal_degrees) || !is_positive(aspect) || !aspect.is_finite() {
         return horizontal_degrees;
     }
 
@@ -1263,8 +1255,7 @@ unsafe fn camera_aspect(classes: PovClasses, camera: il2cpp::Obj) -> f32 {
     if camera.is_null() || classes.camera_get_aspect == 0 {
         return 16.0 / 9.0;
     }
-    let get: unsafe extern "C" fn(*mut c_void) -> f32 =
-        std::mem::transmute(classes.camera_get_aspect);
+    let get: unsafe extern "C" fn(*mut c_void) -> f32 = std::mem::transmute(classes.camera_get_aspect);
     let aspect = get(camera);
     if aspect.is_finite() && aspect > 0.0 {
         aspect
@@ -1407,6 +1398,9 @@ unsafe extern "C" fn race_view_culling(
 }
 
 fn install_culling_hook() {
+    // SAFETY: runs on the plugin init path with IL2CPP live. Lookups return null on failure and are
+    // checked; `race_view_culling` is an `extern "C"` detour matching the hooked signature, and it
+    // re-reads its trampoline and skips the original call until that trampoline is published.
     unsafe {
         let Some(api) = api::get() else {
             return;
@@ -1433,8 +1427,7 @@ fn install_culling_hook() {
             return;
         }
 
-        let trampoline =
-            (api.interceptor_hook)(interceptor, target as *mut c_void, race_view_culling as *mut c_void);
+        let trampoline = (api.interceptor_hook)(interceptor, target as *mut c_void, race_view_culling as *mut c_void);
         if trampoline.is_null() {
             logging::warn("POV: hook failed for RaceViewBase.Culling");
             return;

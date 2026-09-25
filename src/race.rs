@@ -138,6 +138,8 @@ pub fn install() -> bool {
 }
 
 fn install_inner() -> bool {
+    // SAFETY: this runs during plugin init, after the host has brought up the IL2CPP runtime.
+    // Every `il2cpp::` call here is a lookup that returns null on failure and is checked before use.
     unsafe {
         let image = il2cpp::assembly_image("umamusume.dll");
         if image.is_null() {
@@ -190,7 +192,10 @@ fn install_inner() -> bool {
 
         for (name, addr) in [
             ("RaceHorseManagerBase.GetHorseRaceInfos", classes.get_horse_race_infos),
-            ("RaceHorseManagerBase.GetPlayerHorseIndex", classes.get_player_horse_index),
+            (
+                "RaceHorseManagerBase.GetPlayerHorseIndex",
+                classes.get_player_horse_index,
+            ),
             ("HorseRaceInfo.get_HorseData", classes.horse_info_get_horse_data),
             ("HorseData.get_charaName", classes.horse_data_get_name),
             ("HorseData.get_GateNo", classes.horse_data_get_gate_no),
@@ -323,6 +328,9 @@ fn refresh() {
         return;
     };
 
+    // SAFETY: `classes` comes from `CLASSES`, which is only published once `install_inner` has
+    // resolved every class and method. Those pointers are valid for the process lifetime, and
+    // `refresh` is driven from the Unity main thread.
     let snapshot = unsafe { build_snapshot(classes) };
 
     // Dump the field once per race so the index/gate/popularity/player mapping is
@@ -365,8 +373,7 @@ unsafe fn build_snapshot(classes: Classes) -> Snapshot {
         return Snapshot::new();
     }
 
-    let horse_manager =
-        il2cpp::field_object(race_manager, classes.horse_manager_field as il2cpp::Field);
+    let horse_manager = il2cpp::field_object(race_manager, classes.horse_manager_field as il2cpp::Field);
     if horse_manager.is_null() {
         return Snapshot::new();
     }
@@ -401,10 +408,7 @@ unsafe fn build_snapshot(classes: Classes) -> Snapshot {
             popularity: il2cpp::call_i32_0(classes.horse_data_get_popularity, horse_data),
             is_player: index as i32 == player_index,
             raw_is_user: il2cpp::call_bool_0(classes.horse_data_get_is_user, horse_data),
-            name: il2cpp::read_string(il2cpp::call_obj0(
-                classes.horse_data_get_name,
-                horse_data,
-            )),
+            name: il2cpp::read_string(il2cpp::call_obj0(classes.horse_data_get_name, horse_data)),
         });
     }
 

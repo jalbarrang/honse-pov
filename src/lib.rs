@@ -114,9 +114,10 @@ pub extern "C" fn hachimi_init_v3(get_api: GetApiFn, version: i32) -> InitResult
         let Some(api) = api::get() else {
             return InitResult::Error;
         };
-        let registered = unsafe {
-            (api.hachimi_register_on_game_initialized)(Some(on_game_initialized), std::ptr::null_mut())
-        };
+        // SAFETY: `on_game_initialized` is a valid `extern "C"` callback and the plugin needs no
+        // context pointer, so a null one is accepted.
+        let registered =
+            unsafe { (api.hachimi_register_on_game_initialized)(Some(on_game_initialized), std::ptr::null_mut()) };
         if !registered {
             logging::error("could not register the retry callback either");
         }

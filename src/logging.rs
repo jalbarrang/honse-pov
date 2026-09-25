@@ -21,6 +21,8 @@ pub fn log(level: i32, message: &str) {
         return;
     };
     let tag = b"honse_pov\0";
+    // SAFETY: `tag` is a NUL-terminated byte literal and `body` is a live `CString`; both stay
+    // valid for the duration of the call into the host logger.
     unsafe {
         (api.log)(level, tag.as_ptr() as *const _, body.as_ptr());
     }

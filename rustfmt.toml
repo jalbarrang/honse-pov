@@ -1,0 +1,16 @@
+# Kept in sync with honse-hotkeys' rustfmt.toml.
+edition = "2021"
+max_width = 120
+tab_spaces = 4
+
+# Shorthand forms.
+use_field_init_shorthand = true
+use_try_shorthand = true
+
+# Import organization. Both options are nightly-only: stable rustfmt warns and
+# ignores them, which is what the other honse crates do too.
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+
+newline_style = "Auto"
+fn_params_layout = "Tall"

@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-pc-windows-msvc
+
+jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy (windows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Windows MSVC cross-compile tools
+        run: |
+          sudo apt install -y llvm lld
+          sudo ln -sf /usr/bin/llvm-ar /usr/local/bin/llvm-lib
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: ${{ env.TARGET }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-xwin
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-xwin@0.23.1
+
+      - name: Cache cargo-xwin MSVC CRT & Windows SDK
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/cargo-xwin
+          key: ${{ runner.os }}-xwin-cache-v1
+
+      - name: Run Clippy
+        run: cargo xwin clippy --target ${{ env.TARGET }} --all-targets -- -D warnings

@@ -45,9 +45,9 @@ pub fn install() {
 
     // The present callback is the only per-frame tick a plugin can get, and it
     // exists only on Windows and only when the Hachimi GUI is enabled.
-    let registered = unsafe {
-        (api.hachimi_register_present_callback)(Some(frame_tick), std::ptr::null_mut())
-    };
+    // SAFETY: `frame_tick` is a valid `extern "C"` callback and the context pointer is unused by
+    // this plugin, so the host accepts a null one.
+    let registered = unsafe { (api.hachimi_register_present_callback)(Some(frame_tick), std::ptr::null_mut()) };
     if !registered {
         logging::warn("POV: present callback unavailable; the window hotkey will not work");
     }

@@ -61,6 +61,7 @@ fn window_id(api: &api::Api) -> i32 {
     if existing >= 0 {
         return existing;
     }
+    // SAFETY: host API call with no arguments; it only allocates an id.
     let id = unsafe { (api.gui_new_window_id)() };
     if id >= 0 {
         WINDOW_ID.store(id, Ordering::Relaxed);
@@ -83,6 +84,8 @@ pub fn open_window() {
 
     // The host replaces an existing window with the same id, so this is safe to
     // call repeatedly.
+    // SAFETY: `window_contents`/`window_bottom` are valid `extern "C"` callbacks and `title` is a
+    // live `CString`; the host copies what it needs before the call returns.
     unsafe {
         let _ = (api.gui_show_window)(
             id,
@@ -110,8 +113,11 @@ pub fn toggle_window() {
         return;
     }
 
+    // SAFETY: `id` is a window id previously registered with the host; both calls are plain host
+    // queries and mutate nothing this plugin owns.
     let is_open = unsafe { (api.gui_is_window_open)(id) };
     if is_open {
+        // SAFETY: `id` names a window this plugin registered; closing it is idempotent.
         unsafe { (api.gui_close_window)(id) };
         logging::info("POV: picker window closed by hotkey");
     } else {
@@ -159,6 +165,8 @@ fn render(ui: *mut c_void) {
 
     let snapshot = race::snapshot();
 
+    // SAFETY: `ui` is the live UI context the host handed to this window callback; every call below
+    // passes it straight back to the host, which owns it for the duration of the callback.
     unsafe {
         if !race::classes_ready() {
             let message = if race::install_failed() {
@@ -292,11 +300,7 @@ unsafe extern "C" fn grid_rows(ui: *mut c_void, userdata: *mut c_void) {
         ui_text(api.gui_ui_label, ui, &runner.name);
         // The game stores popularity 0-based, so +1 is the displayed rank (1 = favourite).
         ui_text(api.gui_ui_label, ui, &format!("{}", runner.popularity + 1));
-        ui_text(
-            api.gui_ui_label,
-            ui,
-            if runner.is_player { "YOU" } else { "" },
-        );
+        ui_text(api.gui_ui_label, ui, if runner.is_player { "YOU" } else { "" });
 
         ui_void(api.gui_ui_end_row, ui);
     }
@@ -309,13 +313,11 @@ pub fn register() {
         return;
     };
 
+    // SAFETY: registering a static `extern "C"` callback with the host; `label` is a live
+    // `CString` that the host only borrows for the call.
     unsafe {
         if let Ok(label) = CString::new("Open Race POV window") {
-            let _ = (api.gui_register_menu_item)(
-                label.as_ptr(),
-                Some(menu_item_open_window),
-                std::ptr::null_mut(),
-            );
+            let _ = (api.gui_register_menu_item)(label.as_ptr(), Some(menu_item_open_window), std::ptr::null_mut());
         }
     }
 }
