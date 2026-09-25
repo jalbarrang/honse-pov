@@ -223,6 +223,75 @@ camera write from the existing hook would be clobbered. Options:
 Also unresolved: clean restore on race end / pause / goal, and what happens if the
 selected runner is not present in the current race.
 
+### Upstream bug: core's race first-person never runs
+
+`Gallop.RaceModelController.GetPrefabAttachTransform` takes **one enum argument**:
+
+```
+GetPrefabAttachTransform(Gallop.CoursePrefabParam.CharaAttachTransform type) -> UnityEngine.Transform
+```
+
+Hachimi Edge resolves it in `src/il2cpp/hook/umamusume/RaceModelController.rs` with
+`args_count = 2` (a `part`/`name` pair), so the lookup fails:
+
+```
+[WARN] hachimi::il2cpp::symbols: get_method_addr: GetPrefabAttachTransform = NULL
+```
+
+`GET_PREFAB_ATTACH_TRANSFORM_ADDR` therefore stays 0 and
+`RaceViewBase.LateUpdateView`'s race first-person / selfie-stick path is dead code. It is
+latent only because `free_camera.enabled` defaults to false — with the free camera on and
+`mode` set to `FirstPerson`, that path would call address 0.
+
+This plugin resolves the same method with `args_count = 1` and passes the enum value
+directly. Enum ordering:
+
+```text
+Root=0 M_Face=1 Waist=2 Spine=3 Chest=4 Neck=5 Head=6
+Eye_L=7 Eye_R=8 Toe_L=9 Toe_R=10 Nose=11
+```
+
+### Cross-reference: Trainers' Legend G
+
+[Trainers' Legend G](https://github.com/MinamiChiwa/Trainers-Legend-G) (C++, a
+`umamusume-localify` fork) implements the same race first-person feature. Comparing the two
+was useful because it independently confirms some choices and corrects others.
+
+**Confirmed — we had these right:**
+
+- `GetPrefabAttachTransform(model, 0x7)` / `0x8` for the eyes, midpoint of the two
+  positions, `slerp(rotL, rotR, 0.5)` for the rotation.
+- Hiding exactly `M_Hair` and `M_Face` child objects of the model owner, restored by a
+  native-alive-checked `SetActive(true)`.
+- Blocking cut-ins while the POV is active. TLG hooks `RaceCameraManager.PlayEventCamera`
+  and returns false; we cannot (Hachimi owns that target) so we use the game's own
+  `EventCamera._unPlayable` flag instead.
+
+**Ported from TLG:**
+
+- **Offsets.** TLG's `liveFirstPersonOffset` is `(0, 0.075, 0.015)` — a small forward
+  nudge and most of the correction *upward*. Hachimi's own `live_first_person_offset`
+  default is the same pair. We had been guessing a forward-only 0.05; we now use
+  0.015 forward / 0.075 up.
+- **Rotation stabiliser.** TLG's `SmoothQuaternion(q, lastRot, 0.01f)` clamps the applied
+  orientation to at most 0.01 rad from the previous frame's, filtering animated head bob
+  and jitter. Ported as `MAX_ROT_STEP_RAD`. It resets on runner change and on POV toggle
+  so switching runners snaps rather than panning across the track.
+
+**Not ported, deliberately:**
+
+- TLG still resolves `GetPrefabAttachTransform` with `args_count = 2` (a `part`/`name`
+  pair), the same stale signature Hachimi uses. The shipped game method takes a single
+  `CharaAttachTransform` enum argument, so TLG's path is broken on current builds too.
+- TLG overrides the FOV *getter* (`Camera.get_fieldOfView`). Hachimi already hooks that
+  function, so a plugin cannot; writing FOV from `OnPreCull` achieves the same result.
+- TLG's gallop bob (`raceFirstShakeStrength`, a pitch offset driven by vertical velocity)
+  and their `cutin_first_person` mode. Both are optional extras; the bob is a one-constant
+  addition if we ever want it.
+- TLG rewrites the value passed into `Transform.set_position_Injected` inside its
+  `RaceCameraManager.AlterLateUpdate` hook. That is the same mechanism Hachimi uses, and
+  MinHook allows only one hook per target, so it is unavailable to a plugin either way.
+
 ### Available primitives
 
 The dump work behind this project showed which primitives are available for a real POV camera:

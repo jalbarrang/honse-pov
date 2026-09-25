@@ -33,6 +33,8 @@
 mod api;
 mod il2cpp;
 mod logging;
+mod math;
+mod pov;
 mod race;
 mod ui;
 
@@ -101,24 +103,27 @@ pub extern "C" fn hachimi_init_v3(get_api: GetApiFn, version: i32) -> InitResult
 
     if race::install() {
         logging::info("race tracking ready");
-        return InitResult::Ok;
+    } else {
+        // Keep a retry around in case a future host initializes plugins earlier.
+        logging::warn(
+            "race tracking install failed at plugin init; registering a retry for the \
+             game-initialized callback (which this host build may never dispatch)",
+        );
+
+        let Some(api) = api::get() else {
+            return InitResult::Error;
+        };
+        let registered = unsafe {
+            (api.hachimi_register_on_game_initialized)(Some(on_game_initialized), std::ptr::null_mut())
+        };
+        if !registered {
+            logging::error("could not register the retry callback either");
+        }
     }
 
-    // Keep a retry around in case a future host initializes plugins earlier.
-    logging::warn(
-        "race tracking install failed at plugin init; registering a retry for the \
-         game-initialized callback (which this host build may never dispatch)",
-    );
-
-    let Some(api) = api::get() else {
-        return InitResult::Error;
-    };
-    let registered = unsafe {
-        (api.hachimi_register_on_game_initialized)(Some(on_game_initialized), std::ptr::null_mut())
-    };
-    if !registered {
-        logging::error("could not register the retry callback either");
-    }
+    // Milestone 2 camera. Independent of the race tracking above; failures are
+    // surfaced in the picker UI instead of aborting the plugin.
+    pov::install();
 
     InitResult::Ok
 }

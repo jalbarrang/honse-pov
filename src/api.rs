@@ -22,8 +22,10 @@ pub type FnHook = unsafe extern "C" fn(*const c_void, *mut c_void, *mut c_void) 
 pub type FnGetImage = unsafe extern "C" fn(*const c_char) -> *mut c_void;
 pub type FnGetClass = unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char) -> *mut c_void;
 pub type FnGetMethodAddr = unsafe extern "C" fn(*mut c_void, *const c_char, i32) -> *mut c_void;
+pub type FnResolveIcall = unsafe extern "C" fn(*const c_char) -> *mut c_void;
 pub type FnGetField = unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_void;
 pub type FnGetFieldValue = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void);
+pub type FnSetFieldValue = unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_void);
 pub type FnSingleton = unsafe extern "C" fn(*mut c_void) -> *mut c_void;
 pub type FnStringChars = unsafe extern "C" fn(*mut c_void) -> *mut u16;
 pub type FnStringLength = unsafe extern "C" fn(*mut c_void) -> i32;
@@ -93,8 +95,10 @@ pub struct Api {
     pub il2cpp_get_assembly_image: FnGetImage,
     pub il2cpp_get_class: FnGetClass,
     pub il2cpp_get_method_addr: FnGetMethodAddr,
+    pub il2cpp_resolve_icall: FnResolveIcall,
     pub il2cpp_get_field_from_name: FnGetField,
     pub il2cpp_get_field_value: FnGetFieldValue,
+    pub il2cpp_set_field_value: FnSetFieldValue,
     pub il2cpp_get_singleton_like_instance: FnSingleton,
     pub il2cpp_string_chars: FnStringChars,
     pub il2cpp_string_length: FnStringLength,
@@ -208,8 +212,10 @@ pub fn resolve(get: GetApiFn) -> Result<Api, Vec<&'static str>> {
         il2cpp_get_assembly_image: req!("il2cpp_get_assembly_image", FnGetImage),
         il2cpp_get_class: req!("il2cpp_get_class", FnGetClass),
         il2cpp_get_method_addr: req!("il2cpp_get_method_addr", FnGetMethodAddr),
+        il2cpp_resolve_icall: req!("il2cpp_resolve_icall", FnResolveIcall),
         il2cpp_get_field_from_name: req!("il2cpp_get_field_from_name", FnGetField),
         il2cpp_get_field_value: req!("il2cpp_get_field_value", FnGetFieldValue),
+        il2cpp_set_field_value: req!("il2cpp_set_field_value", FnSetFieldValue),
         il2cpp_get_singleton_like_instance: req!(
             "il2cpp_get_singleton_like_instance",
             FnSingleton

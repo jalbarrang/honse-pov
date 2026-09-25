@@ -7,7 +7,7 @@
 use std::ffi::{c_void, CString};
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use crate::{api, race, race::Runner};
+use crate::{api, pov, race, race::Runner};
 
 const WINDOW_TITLE: &str = "Race POV (experimental)";
 const GRID_ID: &str = "honse_pov_runner_grid";
@@ -43,6 +43,13 @@ unsafe fn ui_void(f: api::FnUiVoid, ui: *mut c_void) {
 unsafe fn ui_button(f: api::FnUiButton, ui: *mut c_void, text: &str) -> bool {
     match CString::new(text) {
         Ok(text) => f(ui, text.as_ptr()),
+        Err(_) => false,
+    }
+}
+
+unsafe fn ui_checkbox(f: api::FnUiCheckbox, ui: *mut c_void, text: &str, value: &mut bool) -> bool {
+    match CString::new(text) {
+        Ok(text) => f(ui, text.as_ptr(), value),
         Err(_) => false,
     }
 }
@@ -131,8 +138,12 @@ fn render(ui: *mut c_void, in_window: bool) {
     let snapshot = race::snapshot();
 
     unsafe {
-        ui_text(api.gui_ui_heading, ui, WINDOW_TITLE);
-        ui_void(api.gui_ui_separator, ui);
+        // The window already shows this in its title bar; only the menu section
+        // needs a heading.
+        if !in_window {
+            ui_text(api.gui_ui_heading, ui, WINDOW_TITLE);
+            ui_void(api.gui_ui_separator, ui);
+        }
 
         if !race::classes_ready() {
             let message = if race::install_failed() {
@@ -147,6 +158,45 @@ fn render(ui: *mut c_void, in_window: bool) {
         if !in_window && ui_button(api.gui_ui_button, ui, "Open runner picker window") {
             open_window();
         }
+
+        // Deselect has to be reachable from the menu too, not just the window's
+        // bottom bar: with POV on, the selection is what drives the camera, so
+        // clearing it is how you hand control back without leaving POV enabled on
+        // some arbitrary runner.
+        if race::selected_index() >= 0
+            && ui_button(api.gui_ui_small_button, ui, "Deselect runner")
+        {
+            race::set_selected_index(-1);
+        }
+
+        // --- milestone 2: POV toggle ---
+        let mut pov_enabled = pov::enabled();
+        if ui_checkbox(
+            api.gui_ui_checkbox,
+            ui,
+            "Enable POV (camera follows the selected runner)",
+            &mut pov_enabled,
+        ) {
+            pov::set_enabled(pov_enabled);
+        }
+
+        let status = pov::status();
+        if pov::is_available() {
+            ui_text(api.gui_ui_small, ui, &status);
+        } else {
+            ui_colored(api.gui_ui_colored_label, ui, &status, [255, 140, 140, 255]);
+        }
+
+        if pov::enabled() && race::selected_index() < 0 {
+            ui_colored(
+                api.gui_ui_colored_label,
+                ui,
+                "Select a runner below to aim the camera.",
+                [255, 200, 120, 255],
+            );
+        }
+
+        ui_void(api.gui_ui_separator, ui);
 
         if !snapshot.active {
             ui_text(api.gui_ui_label, ui, "No active race detected.");
@@ -165,8 +215,7 @@ fn render(ui: *mut c_void, in_window: bool) {
                 runner.gate_no, runner.name, runner.index
             ),
             None => "Selected: none".to_owned(),
-        };
-        ui_colored(api.gui_ui_colored_label, ui, &selected_label, [120, 220, 160, 255]);
+        };        ui_colored(api.gui_ui_colored_label, ui, &selected_label, [120, 220, 160, 255]);
         ui_text(
             api.gui_ui_small,
             ui,
@@ -185,7 +234,7 @@ fn render(ui: *mut c_void, in_window: bool) {
             ui_text(
                 api.gui_ui_small,
                 ui,
-                "Milestone 1: selection only. The camera is not driven yet.",
+                "POV is forced while enabled; turn it off to hand the camera back to the game.",
             );
         }
     }
@@ -248,11 +297,12 @@ unsafe extern "C" fn grid_rows(ui: *mut c_void, userdata: *mut c_void) {
 
         ui_text(api.gui_ui_label, ui, &format!("#{}", runner.gate_no));
         ui_text(api.gui_ui_label, ui, &runner.name);
-        ui_text(api.gui_ui_label, ui, &format!("{}", runner.popularity));
+        // The game stores popularity 0-based, so +1 is the displayed rank (1 = favourite).
+        ui_text(api.gui_ui_label, ui, &format!("{}", runner.popularity + 1));
         ui_text(
             api.gui_ui_label,
             ui,
-            if runner.is_user { "YOU" } else { "" },
+            if runner.is_player { "YOU" } else { "" },
         );
 
         ui_void(api.gui_ui_end_row, ui);

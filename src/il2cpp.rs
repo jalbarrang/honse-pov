@@ -106,6 +106,17 @@ pub unsafe fn field_object(object: Obj, field: Field) -> Obj {
     out
 }
 
+/// Writes a `System.Boolean` field (one byte in IL2CPP).
+pub unsafe fn set_field_bool(object: Obj, field: Field, value: bool) {
+    if object.is_null() || field.is_null() {
+        return;
+    }
+    let Some(api) = api::get() else {
+        return;
+    };
+    (api.il2cpp_set_field_value)(object, field, &value as *const bool as *const c_void);
+}
+
 pub unsafe fn singleton(class: Class) -> Obj {
     if class.is_null() {
         return std::ptr::null_mut();
@@ -162,4 +173,30 @@ pub unsafe fn call_bool_0(addr: usize, this: Obj) -> bool {
     }
     let f: unsafe extern "C" fn(Obj) -> bool = std::mem::transmute(addr);
     f(this)
+}
+
+/// Calls `void f(T this, float)` / `void f(float)`-shaped methods.
+pub unsafe fn call_void_f32(addr: usize, this: Obj, value: f32) {
+    if addr == 0 {
+        return;
+    }
+    let f: unsafe extern "C" fn(Obj, f32) = std::mem::transmute(addr);
+    f(this, value)
+}
+
+/// Calls `void f(T this, bool)` / `void f(bool)`-shaped methods.
+pub unsafe fn call_void_bool(addr: usize, this: Obj, value: bool) {
+    if addr == 0 {
+        return;
+    }
+    let f: unsafe extern "C" fn(Obj, bool) = std::mem::transmute(addr);
+    f(this, value)
+}
+
+pub unsafe fn call_obj1_i32(addr: usize, this: Obj, a: i32) -> Obj {
+    if addr == 0 {
+        return std::ptr::null_mut();
+    }
+    let f: unsafe extern "C" fn(Obj, i32) -> Obj = std::mem::transmute(addr);
+    f(this, a)
 }

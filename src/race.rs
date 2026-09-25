@@ -34,8 +34,16 @@ pub struct Runner {
     /// Index used by the race manager / model controllers (`horseIndex`).
     pub index: i32,
     pub gate_no: i32,
+    /// 0-based popularity rank as stored by the game, so `+1` is the human rank.
     pub popularity: i32,
-    pub is_user: bool,
+    /// Whether this is the player's own runner.
+    ///
+    /// Derived from `RaceHorseManagerBase.GetPlayerHorseIndex()` rather than
+    /// `HorseData.get_IsUser()`, which on this build reports true for the last
+    /// three entries of a nine runner field.
+    pub is_player: bool,
+    /// Raw `HorseData.get_IsUser()` value, kept for diagnosis only.
+    pub raw_is_user: bool,
     pub name: String,
 }
 
@@ -58,6 +66,7 @@ impl Snapshot {
 
 static SNAPSHOT: Mutex<Snapshot> = Mutex::new(Snapshot::new());
 static SELECTED: AtomicI32 = AtomicI32::new(-1);
+static LAST_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Game classes / fields / methods resolved once at game-init time.
 #[derive(Clone, Copy)]
@@ -279,6 +288,10 @@ macro_rules! tick_detour {
                 refresh();
             }
 
+            // Milestone 2: recompute the POV pose for the selected runner. Cheap
+            // no-op while the toggle is off.
+            crate::pov::on_race_tick(this);
+
             let trampoline = $slot.load(Ordering::Acquire);
             if trampoline != 0 {
                 let original: UpdateViewFn = std::mem::transmute(trampoline);
@@ -311,6 +324,34 @@ fn refresh() {
     };
 
     let snapshot = unsafe { build_snapshot(classes) };
+
+    // Dump the field once per race so the index/gate/popularity/player mapping is
+    // verifiable straight from the log rather than inferred from the UI.
+    let was_active = LAST_ACTIVE.swap(snapshot.active, Ordering::Relaxed);
+    if snapshot.active && !was_active {
+        let field = snapshot
+            .runners
+            .iter()
+            .map(|r| {
+                format!(
+                    "{}|gate{}|pop{}(+1={})|{}{}",
+                    r.index,
+                    r.gate_no,
+                    r.popularity,
+                    r.popularity + 1,
+                    if r.is_player { "PLAYER" } else { "-" },
+                    if r.raw_is_user && !r.is_player { "(rawUser)" } else { "" }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("  ");
+        logging::info(&format!(
+            "POV field ({} runners, player index {}): {}",
+            snapshot.runners.len(),
+            snapshot.player_index,
+            field
+        ));
+    }
 
     match SNAPSHOT.lock() {
         Ok(mut guard) => *guard = snapshot,
@@ -358,7 +399,8 @@ unsafe fn build_snapshot(classes: Classes) -> Snapshot {
             index: index as i32,
             gate_no: il2cpp::call_i32_0(classes.horse_data_get_gate_no, horse_data),
             popularity: il2cpp::call_i32_0(classes.horse_data_get_popularity, horse_data),
-            is_user: il2cpp::call_bool_0(classes.horse_data_get_is_user, horse_data),
+            is_player: index as i32 == player_index,
+            raw_is_user: il2cpp::call_bool_0(classes.horse_data_get_is_user, horse_data),
             name: il2cpp::read_string(il2cpp::call_obj0(
                 classes.horse_data_get_name,
                 horse_data,

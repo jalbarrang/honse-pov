@@ -150,6 +150,191 @@ If the list stays empty while racing, note **which race type** and send the log.
 3. the race type you were in (single mode / daily / story / legend / team stadium)
 4. a screenshot of the window or menu section if it's a layout problem
 
+## Milestone 2: POV camera
+
+M2 adds an **Enable POV** checkbox to the same menu section and picker window.
+Selection alone still does nothing — the camera only moves while the checkbox is on.
+
+### Expected log lines at startup
+
+```
+honse_pov: POV installed (hooked Gallop.CourseCameraController.OnPreCull)
+```
+
+or, if something is missing:
+
+```
+honse_pov: POV unavailable: could not resolve <name>
+```
+
+The reason is also shown in red in the picker UI, so you do not need the log to see it.
+
+### Procedure
+
+1. Start a race.
+2. Open the picker window. Confirm the checkbox is present and the status reads `POV off`.
+3. Click **select** on a runner.
+4. Tick **Enable POV**.
+
+### Expected result
+
+- [ ] the camera snaps to that runner's eye level and moves with them
+- [ ] unticking the checkbox hands the camera straight back to the game
+- [ ] the status line reads `POV on - eye (x, y, z)`
+- [ ] gate-in, skill cut-ins and the goal camera still use the game's cameras
+      (the override only applies while the race camera is the active one)
+
+### Diagnostic lines (once per second while POV is on)
+
+```
+POV pose runner=7 eye=(123.456, 1.234, 789.012)
+POV apply: wrote pose to race camera transform=0x...
+```
+
+| Log line | Meaning |
+|---|---|
+| `POV pose ...` | the eye transforms were found and the pose computed |
+| `POV apply: wrote pose ...` | the camera was actually moved |
+| `POV apply: skipped: current=0x.. main=0x.. (not the race camera)` | the game is on a cut-in/goal camera, so the override stepped aside |
+| `POV apply: no camera manager on CourseCameraController` | `_cameraManager` was null — send me the line |
+| `POV: eye attach transforms missing for runner N` | the model has no eye attach points (not loaded, or a non-standard model) |
+| `POV on - waiting for a selected runner with a loaded model` (UI) | selected index has no model yet, or the selection is stale |
+
+### Known M2 limitations
+
+- **No look control.** The camera inherits the eye rotation and always faces forward.
+- **Camera changes are not blocked.** Blocking them needs `ChangeCameraMode` /
+  `PlayEventCamera`, which Hachimi already hooks and which MinHook will not let us
+  share, so cut-ins intentionally win.
+- A one-frame lag is possible if the course camera culls after the race camera in a
+  given frame.
+- The head/hair geometry may intrude into the near plane. `FORWARD_OFFSET` in
+  `src/pov.rs` (currently 0.10 m) is the knob for that.
+
+### Tuning without rebuilding
+
+`hachimi\honse_pov.ini` is re-read every second, so values can be changed while the game
+is running — no rebuild, no restart.
+
+```ini
+fov = 90            # HORIZONTAL FOV in degrees (Quake convention), converted to
+                    # Unity's vertical fieldOfView via the camera aspect
+attach = eyes       # eyes | head | neck | chest
+forward = 0.015     # metres along the attach point's forward axis
+up = 0.075          # metres straight up (negative moves down)
+max_rot_step = 0.01 # max rotation change per frame, radians; 0 = rigid head tracking
+near_clip = 0.05    # near clip plane while POV is on; 0 = leave the game's value alone
+far_clip = 2500     # far clip plane while POV is on; 0 = leave the game's value alone
+hide_head = 1       # hide the M_Face / M_Hair meshes
+hide_body = 1       # also hide the runner's own body meshes
+culling = none      # default | none | skip
+suppress_cutins = 1 # drop skill cut-ins at the source while POV is on
+```
+
+Nothing is hardcoded: every POV value above is read from this file.
+
+Changes are logged as `POV tuning: fov=... forward=... ...`, so you can confirm the file
+was picked up.
+
+### Why `near_clip` and `far_clip` exist
+
+The game derives both from things we override, and both feed back into what it reads on
+the next frame.
+
+**Near.** `RaceCameraManager` scales the near clip by FOV (`NEARCLIP_FOV_SCALE_MIN/MAX`,
+`MIN_NEARCLIP_CHANGE_FOV`). Our FOV override persists on the Camera object, so the game
+reads it back and inflates the clip plane — which cut away runners several metres ahead.
+
+**Far.** `RaceCameraManager.CalcFarClipPlane(targetCamera)` recomputes the far clip from
+the camera transform, so at some track positions it shrinks enough to clip the skydome,
+which reads as the sky being eaten.
+
+Hachimi Edge dodges the near case by hooking `Camera.set_nearClipPlane` and forcing
+`0.001` whenever *its* free camera is active for the race — which never covers this
+plugin. We instead write both planes ourselves while POV is drawing (0.05 / 2500, the
+latter matching what core forces), and put the game's own values back when we release the
+camera. The values are sampled from the game while POV is off, so a release always
+restores what the game was actually using.
+
+### Why `hide_body` exists
+
+The camera sits at the eye midpoint, and the runner's shoulders are only ~20 cm below
+that. At a wide FOV the runner's own torso and outfit fill the bottom of the frame, so the
+head meshes alone are not enough — `hide_body` hides `M_Body`, `M_Cheek`, `M_Mayu`, `Eyes`
+and `M_Tail` as well, giving a "no self model" first person view. As with the head parts,
+everything is re-shown the moment we stop driving the camera.
+
+### Player identity and popularity
+
+`HorseData.get_IsUser()` is not trustworthy on this build: in a nine runner field it
+reports true for the last three entries. The player's runner is identified from
+`RaceHorseManagerBase.GetPlayerHorseIndex()` instead, and the raw `get_IsUser` value is
+still logged alongside for comparison.
+
+`HorseData.get_Popularity()` is stored 0-based, so the UI shows `popularity + 1` (1 =
+favourite).
+
+### Why `FindReserve` is the cut-in hook that matters
+
+The obvious target is `RaceSkillCutInReserveCreator.AddCutInInfo`, which is where a
+cut-in joins the reserve list. In practice it **never fires**: the reserve is built once
+at race load by `CreatePlayReserved`, before the race runs, so hooking the incremental
+adder does nothing (confirmed — both overloads installed cleanly and logged zero calls).
+
+The gate the race actually consults is `FindReserve`, asked before entering the cut-in
+state. Answering `false` is equivalent to having an empty reserve list, so it covers
+reserves built at load time and every other piece of race code runs as it always did.
+`AddCutInInfo` is still hooked (both overloads) to catch incremental additions and avoid
+the asset load that queuing triggers.
+
+Suppression is independent of which runner is selected — it is a global POV setting.
+
+### Why `culling` exists (frozen hair / cloth)
+
+The game runs a per-model visibility pass, `RaceViewBase.Culling(curCamera,
+targetHorseIndex, culling, cullingSqrMagnitude)`, and culling a model **pauses its CySpring
+hair and cloth simulation** (`ModelController.SetVisible` →
+`CySpringController.IsSkipUpdatePre`).
+
+That pass runs in the **LateUpdate** phase, using the game's camera position. We only move
+the camera later, in `OnPreCull`. So the game's notion of "on screen" is its own camera,
+not your POV — which is why runners beside the one you are watching freeze mid-gallop while
+everything else keeps moving. It is a draw-distance effect, just measured from the wrong
+viewpoint.
+
+```ini
+culling = none   # default | none | skip
+```
+
+- `default` — leave the game's culling alone.
+- `none` — keep the call but pass `CullingType.None`, so nothing is culled. `CullingType`
+  is `None, Default`, so `None` is the game's own "do not cull".
+- `skip` — drop the call entirely, if `none` turns out not to be enough.
+
+Cost: every runner keeps full spring simulation and LOD. If that hurts performance, the
+proper fix is to make the pass use *our* camera pose rather than disabling it — the hook
+already has the `curCamera` argument, so setting the camera transform to the POV pose at
+the top of the hook would make the distance checks match what is actually rendered.
+
+### Diagnostic lines
+
+```
+POV field (9 runners, player index 7): 0|gate1|pop5(+1=6)|-  1|gate2|pop3(+1=4)|-  ...
+  7|gate8|pop6(+1=7)|PLAYER  ...
+```
+
+`(rawUser)` is appended when `get_IsUser` disagrees with the player index, which is how the
+last-three-entries bug above was found.
+
+Once per runner change, the model owner's child object names and how many were hidden:
+
+```
+POV: owner children (12) = [M_Body, M_Face, M_Hair, ...] -> hid 2
+```
+
+If `hid` is 0, the head meshes are named differently on this model and the camera will be
+looking at the inside of them — send that line.
+
 ## Revert
 
 ```bash
