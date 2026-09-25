@@ -22,7 +22,7 @@ debug = "limited"
 # The plugin talks to Hachimi only through the C ABI exposed by hachimi_init_v3.
 # honse-hotkeys is the one shared crate: chord parsing, edge triggering and the
 # foreground gate, kept out of this repo so honse-tracker can use it too.
-honse-hotkeys = { path = "../honse-hotkeys" }
+honse-hotkeys = { git = "https://github.com/jalbarrang/honse-hotkeys" }
 
 [lints.clippy]
 all = "allow"

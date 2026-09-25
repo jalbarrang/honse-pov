@@ -131,7 +131,7 @@ The window toggle is bound to `window_hotkey` in `honse_pov.ini`, default
 **Ctrl+Shift+P**. `Ctrl+Shift` is the base because a bare key or Shift alone types
 characters, and Ctrl+Alt is AltGr on Windows (everyday characters on non-US layouts).
 
-The mechanics live in the shared [**honse-hotkeys**](../honse-hotkeys) crate rather than in
+The mechanics live in the shared [**honse-hotkeys**](https://github.com/jalbarrang/honse-hotkeys) crate rather than in
 this repo, so honse-tracker can use the same code. `src/hotkeys.rs` here is only the
 adapter: it owns the registry, registers the present callback as the frame tick, and applies
 the configured chord.
@@ -354,3 +354,7 @@ src/
   ui.rs        standalone runner picker window
   logging.rs   thin wrapper over the host logger
 ```
+
+## License
+
+GPL-3.0, matching [honse-hotkeys](https://github.com/jalbarrang/honse-hotkeys). Full text in [LICENSE](LICENSE).

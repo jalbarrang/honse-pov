@@ -5,6 +5,7 @@ version = 4
 [[package]]
 name = "honse-hotkeys"
 version = "0.1.0"
+source = "git+https://github.com/jalbarrang/honse-hotkeys#f60ea1e74d88ce643d652b0df5e400311fbc9221"
 
 [[package]]
 name = "honse_pov"
