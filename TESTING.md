@@ -52,37 +52,28 @@ init on this host.
 Also copy the `Hachimi <version>` line at the top of the log — it tells me exactly which
 host build you're on.
 
-## 2. Does the menu section appear?
+## 2. Does the window open?
 
-Open the Hachimi menu (Right Arrow) **from the home screen**. You should find a
-section **Race POV (experimental)** containing:
+Open the Hachimi menu (Right Arrow) and click the menu item **Open Race POV window**.
 
-- a heading
-- an **Open runner picker window** button
-- `No active race detected.` plus a hint line (because you're not racing)
+Expected: a standalone window titled `Race POV (experimental)`. From the home screen it
+shows `No active race detected.` plus a hint line, with a fixed bottom bar containing
+**Clear selection** and **Close**.
 
 Failures:
 
-- **section missing entirely** → GUI registration failed even though the plugin
+- **menu item missing** → GUI registration failed even though the plugin
   loaded. Send the log.
 - **`Waiting for game initialization (classes not resolved yet).`** → step 1 did not
   complete; the log tells you why.
 - **`Race tracking failed to install. ...`** → step 1 tells you why.
 
-## 3. Does the window open?
-
-Click **Open runner picker window**, or the menu item **Open Race POV window**.
-
-Expected: a standalone window titled `Race POV (experimental)`, showing the same
-"no active race" message, with a fixed bottom bar containing **Clear selection** and
-**Close**.
-
 - Clicking **Open** twice should not stack duplicate windows (the host replaces the
   window with the same id).
-- **Close** should close it; the menu button should reopen it.
+- **Close** should close it; the menu item should reopen it.
 - The window should be draggable/resizable like other Hachimi windows.
 
-## 4. Does the runner list populate? (main test)
+## 3. Does the runner list populate? (main test)
 
 **Test a normal race first** — single mode, daily race, or team stadium.
 
@@ -114,7 +105,7 @@ Then **repeat with a story/episode race** — that's what exercises the second h
 
 If the list stays empty while racing, note **which race type** and send the log.
 
-## 5. Does selection work?
+## 4. Does selection work?
 
 - [ ] click **select** on a row → that row becomes `* selected`, the header becomes
       `Selected: gate N - <name> (#idx)`, and `hachimi.log` gets
@@ -123,7 +114,7 @@ If the list stays empty while racing, note **which race type** and send the log.
 - [ ] **Clear selection** → header returns to `Selected: none`, log gets
       `selected runner index -> -1`
 
-## 6. Milestone 1 assertions (must NOT happen)
+## 5. Milestone 1 assertions (must NOT happen)
 
 - [ ] **the race camera never changes** — no camera jump, no lost cut-ins, no POV.
       Selection must be purely cosmetic in this build.
@@ -133,7 +124,7 @@ If the list stays empty while racing, note **which race type** and send the log.
 - [ ] after the race ends the list goes back to `No active race detected.`, and
       starting another race repopulates it
 
-## 7. Known limitations (not bugs)
+## 6. Known limitations (not bugs)
 
 - **No camera effect.** By design for M1.
 - The list refreshes 10x/sec, so gate/name/popularity are near-live but not
@@ -143,16 +134,16 @@ If the list stays empty while racing, note **which race type** and send the log.
 - `popularity` is the popularity **rank** (1 = race favourite), as stored on
   `HorseData.Popularity` — confirm it matches what the UI shows in-game.
 
-## 8. If something fails, send me
+## 7. If something fails, send me
 
 1. `hachimi.log` (at minimum every line containing `honse_pov` or `could not` / `failed`)
 2. which step number failed and what you saw instead
 3. the race type you were in (single mode / daily / story / legend / team stadium)
-4. a screenshot of the window or menu section if it's a layout problem
+4. a screenshot of the window if it's a layout problem
 
 ## Milestone 2: POV camera
 
-M2 adds an **Enable POV** checkbox to the same menu section and picker window.
+M2 adds an **Enable POV** checkbox to the picker window.
 Selection alone still does nothing — the camera only moves while the checkbox is on.
 
 ### Expected log lines at startup

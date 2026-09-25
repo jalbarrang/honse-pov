@@ -62,9 +62,8 @@ To unload, remove the entry from `load_libraries` and restart.
 ## Usage
 
 1. Launch the game and start a race (any normal race uses `RaceViewReplay`).
-2. Open the Hachimi menu. There is a **Race POV (experimental)** section.
-3. Click **Open runner picker window** (also available as a menu item) to get a standalone window.
-4. The window lists every runner in the current race:
+2. Open the Hachimi menu and click **Open Race POV window** to get the standalone picker window.
+3. The window lists every runner in the current race:
 
    `select | gate | name | popularity | tag`
 
@@ -96,8 +95,8 @@ honse_pov: could not resolve method HorseData.get_Popularity
 honse_pov: could not resolve class Gallop.RaceViewReplay
 ```
 
-The plugin never aborts the process on failure; the menu section stays visible and reports
-the problem.
+The plugin never aborts the process on failure; the window stays open and reports the
+problem.
 
 To uninstall, delete `honse_pov.dll` and remove its entry from `load_libraries`.
 
@@ -138,14 +137,14 @@ If class resolution fails you get a specific error instead, e.g.:
 could not resolve method HorseData.get_Popularity
 ```
 
-Failure is non-fatal: the menu section stays visible and reports that classes were not resolved.
+Failure is non-fatal: the window stays open and reports that classes were not resolved.
 
 ## How it works
 
 ```
 hachimi_init_v3(get_api, version)
   |-- resolve API symbols by name (no Vtable dependency)
-  |-- register GUI (menu section + menu item + window)
+  |-- register GUI (menu item + window)
   |-- register on_game_initialized
         |-- resolve Gallop classes / fields / methods
         |-- hook RaceViewReplay.UpdateView(float)   <-- main-thread tick
@@ -311,6 +310,6 @@ src/
   api.rs       name-resolved bindings to the plugin C API
   il2cpp.rs    IL2CPP helpers (classes, fields, arrays, strings, invocation)
   race.rs      class resolution, UpdateView hook, runner snapshot
-  ui.rs        menu section + standalone runner picker window
+  ui.rs        standalone runner picker window
   logging.rs   thin wrapper over the host logger
 ```

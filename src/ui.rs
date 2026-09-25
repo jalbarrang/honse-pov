@@ -95,7 +95,7 @@ pub fn open_window() {
 }
 
 unsafe extern "C" fn window_contents(ui: *mut c_void, _userdata: *mut c_void) {
-    render(ui, true);
+    render(ui);
 }
 
 unsafe extern "C" fn window_bottom(ui: *mut c_void, _userdata: *mut c_void) {
@@ -118,11 +118,7 @@ unsafe extern "C" fn window_bottom(ui: *mut c_void, _userdata: *mut c_void) {
     }
 }
 
-// ------------------------------------------------------------ menu section --
-
-unsafe extern "C" fn menu_section(ui: *mut c_void, _userdata: *mut c_void) {
-    render(ui, false);
-}
+// -------------------------------------------------------------- menu item --
 
 unsafe extern "C" fn menu_item_open_window(_userdata: *mut c_void) {
     open_window();
@@ -130,7 +126,7 @@ unsafe extern "C" fn menu_item_open_window(_userdata: *mut c_void) {
 
 // --------------------------------------------------------------- renderer ---
 
-fn render(ui: *mut c_void, in_window: bool) {
+fn render(ui: *mut c_void) {
     let Some(api) = api::get() else {
         return;
     };
@@ -138,13 +134,6 @@ fn render(ui: *mut c_void, in_window: bool) {
     let snapshot = race::snapshot();
 
     unsafe {
-        // The window already shows this in its title bar; only the menu section
-        // needs a heading.
-        if !in_window {
-            ui_text(api.gui_ui_heading, ui, WINDOW_TITLE);
-            ui_void(api.gui_ui_separator, ui);
-        }
-
         if !race::classes_ready() {
             let message = if race::install_failed() {
                 "Race tracking failed to install. Check the Hachimi log for the missing class/method."
@@ -153,20 +142,6 @@ fn render(ui: *mut c_void, in_window: bool) {
             };
             ui_text(api.gui_ui_label, ui, message);
             return;
-        }
-
-        if !in_window && ui_button(api.gui_ui_button, ui, "Open runner picker window") {
-            open_window();
-        }
-
-        // Deselect has to be reachable from the menu too, not just the window's
-        // bottom bar: with POV on, the selection is what drives the camera, so
-        // clearing it is how you hand control back without leaving POV enabled on
-        // some arbitrary runner.
-        if race::selected_index() >= 0
-            && ui_button(api.gui_ui_small_button, ui, "Deselect runner")
-        {
-            race::set_selected_index(-1);
         }
 
         // --- milestone 2: POV toggle ---
@@ -215,7 +190,8 @@ fn render(ui: *mut c_void, in_window: bool) {
                 runner.gate_no, runner.name, runner.index
             ),
             None => "Selected: none".to_owned(),
-        };        ui_colored(api.gui_ui_colored_label, ui, &selected_label, [120, 220, 160, 255]);
+        };
+        ui_colored(api.gui_ui_colored_label, ui, &selected_label, [120, 220, 160, 255]);
         ui_text(
             api.gui_ui_small,
             ui,
@@ -228,15 +204,6 @@ fn render(ui: *mut c_void, in_window: bool) {
         ui_void(api.gui_ui_separator, ui);
 
         render_runner_grid(api, ui, &snapshot.runners);
-
-        if !in_window {
-            ui_void(api.gui_ui_separator, ui);
-            ui_text(
-                api.gui_ui_small,
-                ui,
-                "POV is forced while enabled; turn it off to hand the camera back to the game.",
-            );
-        }
     }
 }
 
@@ -317,8 +284,6 @@ pub fn register() {
     };
 
     unsafe {
-        let _ = (api.gui_register_menu_section)(Some(menu_section), std::ptr::null_mut());
-
         if let Ok(label) = CString::new("Open Race POV window") {
             let _ = (api.gui_register_menu_item)(
                 label.as_ptr(),
