@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "honse-hotkeys"
+version = "0.1.0"
+
+[[package]]
 name = "honse_pov"
 version = "0.1.0"
+dependencies = [
+ "honse-hotkeys",
+]

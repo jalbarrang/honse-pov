@@ -31,7 +31,7 @@
 //! resolves and hooks the same race classes one phase earlier.
 
 mod api;
-mod hotkey;
+mod hotkeys;
 mod il2cpp;
 mod logging;
 mod math;
@@ -125,7 +125,7 @@ pub extern "C" fn hachimi_init_v3(get_api: GetApiFn, version: i32) -> InitResult
     // Milestone 2 camera. Independent of the race tracking above; failures are
     // surfaced in the picker UI instead of aborting the plugin.
     pov::install();
-    hotkey::install();
+    hotkeys::install();
 
     InitResult::Ok
 }

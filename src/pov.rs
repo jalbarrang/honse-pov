@@ -367,13 +367,13 @@ fn reload_tuning() {
     drop(guard);
 
     if let Some(text) = hotkey_text {
-        match crate::hotkey::Chord::parse(&text) {
-            Some(chord) => crate::hotkey::set_chord(chord),
+        match honse_hotkeys::Chord::parse(&text) {
+            Some(chord) => crate::hotkeys::set_chord(chord),
             None => {
                 if should_log(&LAST_HOTKEY_WARN_MS) {
                     logging::warn(&format!(
                         "POV: could not parse window_hotkey {text:?}; keeping {}",
-                        crate::hotkey::current().describe()
+                        crate::hotkeys::current().describe()
                     ));
                 }
             }
