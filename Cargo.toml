@@ -1,0 +1,26 @@
+[package]
+name = "honse_pov"
+version = "0.1.0"
+edition = "2021"
+description = "Hachimi Edge plugin: experimental race POV camera (milestone 1: runner selection)"
+license = "GPL-3.0"
+
+[lib]
+name = "honse_pov"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+strip = true
+lto = "fat"
+codegen-units = 1
+
+[profile.dev]
+debug = "limited"
+
+[dependencies]
+# Intentionally dependency-free. The plugin talks to Hachimi only through the
+# C ABI exposed by hachimi_init_v3.
+
+[lints.clippy]
+all = "allow"
