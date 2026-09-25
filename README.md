@@ -119,6 +119,24 @@ This plugin therefore resolves classes and installs its hooks directly in
 `il2cpp::hook::init()`, i.e. once the IL2CPP runtime is up and `umamusume.dll` is loaded —
 the same phase in which Hachimi resolves and hooks its own race classes.
 
+## Host quirk: plugin grids wrapped mid-word and did not fill the window
+
+`gui_ui_grid` is built on `egui::Grid`, which sizes each column to its content. Two
+defaults combine badly with plugin windows:
+
+- egui's grid measures cells assuming they do not wrap, but plugin windows set
+  `TextWrapMode::Wrap` so paragraph labels wrap. Inside a grid that collapses every
+  column's measurement to `interact_size.x` (~34-40px), so cell text wraps mid-word —
+  `select` renders as two lines and names break after ~8 characters.
+- `Grid`'s minimum column width also defaults to `interact_size.x`, so even without the
+  wrapping the columns stay one word-fragment wide and the grid sits in a corner of a
+  wide window, leaving most of it empty.
+
+Both are fixed in the host. `gui_ui_grid` now shares the available width across the
+columns (`min_col_width`) and forces `TextWrapMode::Extend` while the cells are measured,
+restoring the no-wrap assumption the grid relies on. On a host without those fixes this
+plugin still loads and works, but the runner grid looks cramped.
+
 ## Expected log output
 
 With Hachimi's log level at Info or lower you should see, in order:
