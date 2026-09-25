@@ -357,4 +357,4 @@ src/
 
 ## License
 
-GPL-3.0, matching [honse-hotkeys](https://github.com/jalbarrang/honse-hotkeys). Full text in [LICENSE](LICENSE).
+GPL-3.0-or-later, matching [honse-hotkeys](https://github.com/jalbarrang/honse-hotkeys). Full text in [LICENSE](LICENSE).

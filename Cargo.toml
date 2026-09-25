@@ -3,7 +3,7 @@ name = "honse_pov"
 version = "0.1.0"
 edition = "2021"
 description = "Hachimi Edge plugin: experimental race POV camera (milestone 1: runner selection)"
-license = "GPL-3.0"
+license = "GPL-3.0-or-later"
 
 [lib]
 name = "honse_pov"
