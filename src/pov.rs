@@ -224,6 +224,10 @@ const DEFAULT_CONFIG: &str = "\
 #                 none    = keep the call but never cull (fixes frozen hair/cloth)\n\
 #                 skip    = drop the call\n\
 # suppress_cutins  drop skill cut-ins at the source while POV is on (1/0)\n\
+# window_hotkey    global chord that opens/closes the picker window.\n\
+#                  Modifiers + key, e.g. ctrl+shift+p, alt+p, or none.\n\
+#                  Ctrl or Alt is required in practice: a bare key or Shift alone\n\
+#                  types characters, and Ctrl+Alt is AltGr on Windows.\n\
 #\n\
 # Chest cam, matching the game's own first person view (arms/hands visible):\n\
 #   attach = chest\n\
@@ -239,7 +243,8 @@ far_clip = 2500\n\
 hide_head = 1\n\
 hide_body = 1\n\
 culling = none\n\
-suppress_cutins = 1\n";
+suppress_cutins = 1\n\
+window_hotkey = ctrl+shift+p\n";
 
 static TUNING: Mutex<Tuning> = Mutex::new(Tuning::defaults());
 static LAST_TUNING_RELOAD_MS: AtomicU64 = AtomicU64::new(0);
@@ -287,6 +292,7 @@ fn reload_tuning() {
     };
 
     let mut next = Tuning::defaults();
+    let mut hotkey_text: Option<String> = None;
     for line in text.lines() {
         let line = line.split(['#', ';']).next().unwrap_or("").trim();
         let Some((key, value)) = line.split_once('=') else {
@@ -332,6 +338,9 @@ fn reload_tuning() {
                 }
             }
             "hide_head" => next.hide_head = flag(value),
+            // Parsed after the loop: a typo should leave the previous binding
+            // alone rather than silently unbind the hotkey.
+            "window_hotkey" | "hotkey" => hotkey_text = Some(value.to_owned()),
             "culling" => {
                 if let Some(v) = CullingMode::parse(value) {
                     next.culling = v;
@@ -354,6 +363,21 @@ fn reload_tuning() {
             next.far_clip, next.hide_head, next.hide_body, next.culling, next.suppress_cutins
         ));
         *guard = next;
+    }
+    drop(guard);
+
+    if let Some(text) = hotkey_text {
+        match crate::hotkey::Chord::parse(&text) {
+            Some(chord) => crate::hotkey::set_chord(chord),
+            None => {
+                if should_log(&LAST_HOTKEY_WARN_MS) {
+                    logging::warn(&format!(
+                        "POV: could not parse window_hotkey {text:?}; keeping {}",
+                        crate::hotkey::current().describe()
+                    ));
+                }
+            }
+        }
     }
 }
 
@@ -383,6 +407,7 @@ static LAST_POSE_LOG_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_APPLY_LOG_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_CUTIN_LOG_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_CULLING_LOG_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_HOTKEY_WARN_MS: AtomicU64 = AtomicU64::new(0);
 
 /// Tracks whether we have actually flipped `EventCamera._unPlayable`, so the flag
 /// is only touched on transitions and can always be restored.

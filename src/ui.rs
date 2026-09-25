@@ -7,7 +7,7 @@
 use std::ffi::{c_void, CString};
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use crate::{api, pov, race, race::Runner};
+use crate::{api, logging, pov, race, race::Runner};
 
 const WINDOW_TITLE: &str = "Race POV (experimental)";
 const GRID_ID: &str = "honse_pov_runner_grid";
@@ -91,6 +91,32 @@ pub fn open_window() {
             Some(window_bottom),
             std::ptr::null_mut(),
         );
+    }
+}
+
+/// Opens the picker if it is closed, closes it if it is open. Bound to the hotkey.
+///
+/// Asks the host rather than tracking its own flag, because the X on the title bar
+/// closes the window inside the host and a private flag would then be out of phase.
+/// On a host without `gui_is_window_open` the stub reports "closed", so the hotkey
+/// degrades to always opening the window.
+pub fn toggle_window() {
+    let Some(api) = api::get() else {
+        return;
+    };
+
+    let id = window_id(api);
+    if id < 0 {
+        return;
+    }
+
+    let is_open = unsafe { (api.gui_is_window_open)(id) };
+    if is_open {
+        unsafe { (api.gui_close_window)(id) };
+        logging::info("POV: picker window closed by hotkey");
+    } else {
+        open_window();
+        logging::info("POV: picker window opened by hotkey");
     }
 }
 

@@ -61,6 +61,7 @@ pub type FnGuiShowWindow = unsafe extern "C" fn(
     *mut c_void,
 ) -> bool;
 pub type FnGuiCloseWindow = unsafe extern "C" fn(i32);
+pub type FnGuiIsWindowOpen = unsafe extern "C" fn(i32) -> bool;
 
 pub type FnUiText = unsafe extern "C" fn(*mut c_void, *const c_char) -> bool;
 pub type FnUiVoid = unsafe extern "C" fn(*mut c_void) -> bool;
@@ -114,6 +115,7 @@ pub struct Api {
     pub gui_new_window_id: FnGuiNewWindowId,
     pub gui_show_window: FnGuiShowWindow,
     pub gui_close_window: FnGuiCloseWindow,
+    pub gui_is_window_open: FnGuiIsWindowOpen,
 
     pub gui_ui_heading: FnUiText,
     pub gui_ui_label: FnUiText,
@@ -188,6 +190,12 @@ fn leak(name: &str) -> &'static str {
     Box::leak(name.to_owned().into_boxed_str())
 }
 
+/// Fallback for symbols the host may not have yet. Reports "not open", so callers
+/// degrade to always-opening rather than mis-toggling.
+unsafe extern "C" fn stub_is_window_open(_id: i32) -> bool {
+    false
+}
+
 /// Resolve the subset of the API we use. Returns `Err(missing_names)` when a
 /// required symbol is unavailable (host too old / mismatched build).
 pub fn resolve(get: GetApiFn) -> Result<Api, Vec<&'static str>> {
@@ -198,6 +206,27 @@ pub fn resolve(get: GetApiFn) -> Result<Api, Vec<&'static str>> {
             match resolve_fn::<$ty>(get, $name, &mut missing, true) {
                 Some(f) => f,
                 None => return Err(missing),
+            }
+        };
+    }
+
+    // For symbols added to the host after this plugin was written. A missing one
+    // degrades a feature; it must not stop the plugin loading.
+    macro_rules! opt {
+        ($name:literal, $ty:ty, $stub:expr) => {
+            match resolve_fn::<$ty>(get, $name, &mut Vec::new(), false) {
+                Some(f) => f,
+                None => {
+                    raw_log(
+                        get,
+                        crate::logging::WARN,
+                        &format!(
+                            "honse_pov: host has no {}; that feature degrades",
+                            $name
+                        ),
+                    );
+                    $stub
+                }
             }
         };
     }
@@ -240,6 +269,7 @@ pub fn resolve(get: GetApiFn) -> Result<Api, Vec<&'static str>> {
         gui_new_window_id: req!("gui_new_window_id", FnGuiNewWindowId),
         gui_show_window: req!("gui_show_window", FnGuiShowWindow),
         gui_close_window: req!("gui_close_window", FnGuiCloseWindow),
+        gui_is_window_open: opt!("gui_is_window_open", FnGuiIsWindowOpen, stub_is_window_open),
 
         gui_ui_heading: req!("gui_ui_heading", FnUiText),
         gui_ui_label: req!("gui_ui_label", FnUiText),

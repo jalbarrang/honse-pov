@@ -119,6 +119,24 @@ This plugin therefore resolves classes and installs its hooks directly in
 `il2cpp::hook::init()`, i.e. once the IL2CPP runtime is up and `umamusume.dll` is loaded —
 the same phase in which Hachimi resolves and hooks its own race classes.
 
+## Hotkey: how a plugin gets key input at all
+
+Hachimi's plugin API exposes no key events, and Hachimi Edge has no WndProc plugin hook,
+so a plugin cannot observe key messages. The only workable route is what honse-tracker
+does: poll `GetAsyncKeyState` every frame from the host's present callback, edge-trigger on
+the down-transition, and gate on the foreground window belonging to the game process
+(polling is global, so otherwise the chord fires while you type elsewhere).
+
+The window toggle is bound to `window_hotkey` in `honse_pov.ini`, default
+**Ctrl+Shift+P**. `Ctrl+Shift` is the base because a bare key or Shift alone types
+characters, and Ctrl+Alt is AltGr on Windows (everyday characters on non-US layouts).
+
+The toggle asks the host for the window's real state via `gui_is_window_open(id)` rather
+than tracking its own flag — the X on a title bar closes a plugin window *inside the host*,
+and a private flag would be out of phase after that, needing two presses to reopen. That
+symbol is resolved optionally: on a host without it the stub reports "closed" and the
+hotkey degrades to always opening the window.
+
 ## Host quirk: plugin grids wrapped mid-word and did not fill the window
 
 `gui_ui_grid` is built on `egui::Grid`, which sizes each column to its content. Two

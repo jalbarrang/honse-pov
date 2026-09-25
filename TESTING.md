@@ -326,6 +326,46 @@ POV: owner children (12) = [M_Body, M_Face, M_Hair, ...] -> hid 2
 If `hid` is 0, the head meshes are named differently on this model and the camera will be
 looking at the inside of them — send that line.
 
+### Window hotkey
+
+The picker window toggles with a global chord, default **Ctrl+Shift+P**:
+
+```ini
+window_hotkey = ctrl+shift+p   # or alt+p, ctrl+shift+f1, none, ...
+```
+
+Recognised modifiers are `ctrl`, `shift`, `alt`; keys are `a`-`z`, `0`-`9`, `f1`-`f12`,
+and `space tab insert delete home end pageup pagedown` plus the punctuation names
+(`minus`, `equals`, `comma`, `period`, `slash`, `semicolon`, `quote`, `backquote`,
+`bracketleft`, `bracketright`, `backslash`). A typo leaves the previous binding alone
+rather than silently unbinding it.
+
+#### Why it needs Ctrl or Alt
+
+Key state is polled globally (`GetAsyncKeyState`), so a chord that types characters would
+fire while you type anywhere:
+
+- a bare key, or Shift alone, produces characters;
+- **Ctrl+Alt is AltGr on Windows** — on non-US layouts that is how everyday characters are
+typed (Spanish `AltGr+2` is `@`), so a Ctrl+Alt chord fires during ordinary typing.
+
+Ctrl+Shift produces no characters on any layout. The plugin only warns if you pick
+something without Ctrl or Alt; it does not refuse it.
+
+#### Why polling rather than a key hook
+
+Hachimi Edge has no WndProc plugin hook, so a plugin cannot observe key messages. Polling
+happens on the host's present callback — the same approach honse-tracker uses. Two
+consequences:
+
+- it is gated on the foreground window belonging to the game process, so chords do not
+  fire while another application has focus;
+- it needs the present callback, which only exists when the Hachimi GUI is enabled
+  (`disable_gui = false`). With the GUI off, this hotkey does nothing.
+
+Toggling asks the host for the window's real state, so closing the window with its **X**
+and then pressing the chord reopens it in one press.
+
 ## Revert
 
 ```bash
